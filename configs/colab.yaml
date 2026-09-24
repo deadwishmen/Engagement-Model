@@ -1,0 +1,11 @@
+# Đường dẫn khi chạy trên Colab với dữ liệu để trong Google Drive.
+# Sửa lại cho khớp thư mục thật của bạn. Nếu muốn tải thẳng từ Kaggle,
+# dùng scripts/download_kaggle_data.py (sẽ tự sinh configs/colab_auto.yaml).
+_base_: default.yaml
+
+OUTPUT_DIR: /content/drive/MyDrive/engagement/engagement-dataset-npy
+FEATURE_DIR: /content/drive/MyDrive/engagement/resnet_features
+SKELETON_DIR: /content/drive/MyDrive/engagement/skeleton
+SPLIT_NAMES_JSON_PATH: /content/drive/MyDrive/engagement/split_names.json
+CHECKPOINT_DIR: /content/drive/MyDrive/engagement/outputs
+NUM_WORKERS: 2

@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.egg-info/
+outputs/
+data/
+*.pt
+*.pth
+configs/colab_auto.yaml
+.ipynb_checkpoints/

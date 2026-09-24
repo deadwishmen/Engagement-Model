@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "engagement"
+version = "5.0.0"
+description = "Engagement recognition: K-hop social graph + context window + skeleton Bi-LSTM + multimodal fusion"
+requires-python = ">=3.9"
+dependencies = ["torch>=2.0", "numpy", "pandas", "scipy", "scikit-learn", "matplotlib", "pyyaml"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
