@@ -14,11 +14,15 @@ class GraphAttentionLayer(nn.Module):
         self.norm2 = nn.LayerNorm(dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, nodes, node_mask):
-        attn_out, attn_w = self.attn(nodes, nodes, nodes, key_padding_mask=~node_mask)
+    def forward(self, nodes, node_mask, attn_bias=None):
+        """attn_bias (tuỳ chọn): (B * num_heads, N, N), giá trị thực cộng thẳng vào attention
+        score trước softmax (không phải mask 0/1). Dùng để "thiên vị" một số cặp node theo
+        thông tin bên ngoài (ví dụ đặc trưng quan hệ hình học), tách biệt với key_padding_mask."""
+        attn_out, attn_w = self.attn(nodes, nodes, nodes, key_padding_mask=~node_mask, attn_mask=attn_bias)
         x = self.norm1(nodes + self.dropout(attn_out))
         x = self.norm2(x + self.dropout(self.ff(x)))
         return x, attn_w
+
 
 class RelationAttentionBias(nn.Module):
     """Đặc trưng quan hệ Fb->Fk (khoảng cách, vận tốc tương đối, ...) -> 1 số thực bias
@@ -26,50 +30,70 @@ class RelationAttentionBias(nn.Module):
     tách biệt với nội dung ngoại hình của Fk - tức "nên chú ý bao nhiêu" (do hình học quyết
     định) và "nội dung gì được truyền đi" (do embedding ngoại hình quyết định) không bị trộn
     lẫn vào cùng 1 vector như cách cộng thẳng relation vào node."""
- 
+
     def __init__(self, relation_dim, num_heads, hidden_dim=32):
         super().__init__()
         self.num_heads = num_heads
         self.net = nn.Sequential(nn.Linear(relation_dim, hidden_dim), nn.GELU(), nn.Linear(hidden_dim, num_heads))
         nn.init.zeros_(self.net[-1].weight)     # khởi tạo bias = 0 => ban đầu không đổi so với attention thường
         nn.init.zeros_(self.net[-1].bias)
- 
+
     def forward(self, relation, Fk_mask):
         """relation: (B, K, relation_dim), Fk_mask: (B, K) -> attn_mask (B*num_heads, 1+K, 1+K)."""
         B, K, _ = relation.shape
         N = K + 1
         relation = torch.nan_to_num(relation, nan=0.0, posinf=10.0, neginf=-10.0).clamp(-10, 10)
- 
+
         edge_bias = self.net(relation) * Fk_mask.float().unsqueeze(-1)   # (B, K, num_heads)
         edge_bias = edge_bias.permute(0, 2, 1)                          # (B, num_heads, K)
- 
+
         full = edge_bias.new_zeros(B, self.num_heads, N, N)
         full[:, :, 0, 1:] = edge_bias      # Fb (node 0) chú ý tới từng Fk
         full[:, :, 1:, 0] = edge_bias      # dùng chung giá trị cho chiều Fk chú ý ngược lại Fb
         return full.reshape(B * self.num_heads, N, N)
 
 
-
 class BuildGraphAttention(nn.Module):
     """Graph gồm Fb (node 0) + K node Fk. Sau GNN lấy lại node Fb làm F_social.
-    relation_dim != None -> cộng embedding đặc trưng quan hệ vào từng Fk."""
 
-    def __init__(self, dim, num_gnn_layers=2, num_heads=4, dropout=0.20, relation_dim=None):
+    relation_dim != None -> dùng đặc trưng quan hệ theo 1 trong 2 cách (relation_encoding):
+      - "node": (kiểu cũ) cộng thẳng embedding quan hệ vào từng Fk trước khi vào GNN.
+                Đơn giản, nhưng trộn lẫn "nên chú ý bao nhiêu" và "nội dung gì" vào 1 vector.
+      - "bias": encode quan hệ thành 1 số thực mỗi head, cộng thẳng vào attention SCORE
+                (trước softmax). Quan hệ hình học quyết định mức độ chú ý, còn Fk vẫn giữ
+                nguyên nội dung ngoại hình - không bị pha trộn.
+    """
+
+    def __init__(self, dim, num_gnn_layers=2, num_heads=4, dropout=0.20,
+                relation_dim=None, relation_encoding="node"):
         super().__init__()
-        self.relation_encoder = None
-        if relation_dim is not None:
+        if relation_dim is not None and relation_encoding not in ("node", "bias"):
+            raise ValueError(f"RELATION_ENCODING không hợp lệ: {relation_encoding!r} (chỉ nhận 'node' hoặc 'bias')")
+
+        self.num_heads = num_heads
+        self.relation_encoding = relation_encoding
+        self.relation_encoder = None        # chế độ "node" - giữ tên cũ để tương thích checkpoint cũ
+        self.relation_bias_encoder = None   # chế độ "bias" - mới
+
+        if relation_dim is not None and relation_encoding == "node":
             self.relation_encoder = nn.Sequential(
                 nn.Linear(relation_dim, 64), nn.GELU(), nn.LayerNorm(64),
                 nn.Linear(64, dim), nn.GELU(), nn.LayerNorm(dim),
             )
+        elif relation_dim is not None and relation_encoding == "bias":
+            self.relation_bias_encoder = RelationAttentionBias(relation_dim, num_heads)
+
         self.gnn_layers = nn.ModuleList(
             [GraphAttentionLayer(dim, num_heads, dropout) for _ in range(num_gnn_layers)])
         self.out_norm = nn.LayerNorm(dim)
 
     def forward(self, Fk, Fk_mask, Fb, relation=None):
+        attn_bias = None
         if self.relation_encoder is not None:
-            relation = torch.nan_to_num(relation, nan=0.0, posinf=10.0, neginf=-10.0).clamp(-10, 10)
-            Fk = Fk + self.relation_encoder(relation)
+            relation_clamped = torch.nan_to_num(relation, nan=0.0, posinf=10.0, neginf=-10.0).clamp(-10, 10)
+            Fk = Fk + self.relation_encoder(relation_clamped)
+        elif self.relation_bias_encoder is not None:
+            attn_bias = self.relation_bias_encoder(relation, Fk_mask)
 
         B = Fk.size(0)
         nodes = torch.cat([Fb.unsqueeze(1), Fk], dim=1)                     # (B, 1+K, D)
@@ -77,7 +101,7 @@ class BuildGraphAttention(nn.Module):
 
         attn_w = None
         for layer in self.gnn_layers:
-            nodes, attn_w = layer(nodes, node_mask)
+            nodes, attn_w = layer(nodes, node_mask, attn_bias=attn_bias)
 
         has_neighbor = Fk_mask.any(dim=1)
         social = self.out_norm(nodes[:, 0]) * has_neighbor.float().unsqueeze(-1)   # không có hàng xóm -> 0
