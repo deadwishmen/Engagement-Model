@@ -13,14 +13,49 @@ from .geometry import (
 )
 
 
+def _score_candidate(relation, target_row, cand_row, stats_all, target_idx, cand_idx, cfg):
+    """Điểm càng THẤP càng được ưu tiên chọn làm hàng xóm. relation là mảng 12 chiều đã tính sẵn
+    (compute_relation_features), nên các chế độ bên dưới không cần đọc/tính thêm gì."""
+    dist = float(relation[2])          # distance_mean - đã chuẩn hoá theo sqrt(diện tích bbox target)
+    mode = cfg.get("NEIGHBOR_RANKING", "distance_motion")
+
+    if mode == "distance_only":
+        return dist
+
+    if mode == "distance_motion":
+        # Chỉ dùng bbox, KHÔNG cần skeleton:
+        #   - temporal_iou cao   -> 2 người đồng hiện diện lâu hơn -> ưu tiên hơn (trừ điểm)
+        #   - distance_change âm -> khoảng cách đang giảm dần theo thời gian (đang tới gần nhau)
+        #                           -> tín hiệu tương tác mạnh hơn tư thế tĩnh -> ưu tiên hơn (cộng điểm âm)
+        overlap = temporal_iou(target_row, cand_row)
+        distance_change = float(relation[6])
+        return (dist - cfg["NEIGHBOR_TEMPORAL_IOU_WEIGHT"] * overlap
+                    + cfg["NEIGHBOR_CONVERGENCE_WEIGHT"] * distance_change)
+
+    if mode == "distance_orientation":
+        # (kiểu cũ) dựa vào skeleton để đoán trục cơ thể - CHỈ biết trục, không biết mặt/lưng.
+        score = dist
+        if cfg["USE_ORIENTATION_PENALTY"] and cfg.get("SKELETON_DIR"):
+            facing = estimate_facing_direction(
+                cand_row["sample_id"], cfg["SKELETON_DIR"], cfg["SKELETON_CONF_THR"])
+            t_stats, c_stats = stats_all[target_idx], stats_all[cand_idx]
+            if facing is not None and t_stats and c_stats:
+                to_target = np.array([t_stats[0] - c_stats[0], t_stats[1] - c_stats[1]])
+                if orientation_angle_deg(facing, to_target) > cfg["ORIENTATION_ANGLE_THRESHOLD_DEG"]:
+                    score += cfg["ORIENTATION_PENALTY"]
+        return score
+
+    raise ValueError(f"NEIGHBOR_RANKING không hợp lệ: {mode!r} "
+                     "(chỉ nhận 'distance_only', 'distance_motion' hoặc 'distance_orientation')")
+
+
 def build_neighbor_index(df, cfg):
     """Với mỗi sample, chọn tối đa K hàng xóm (khác object_id) trong cùng session/camera.
-    Xếp hạng = khoảng cách chuẩn hoá (+ phạt nếu hàng xóm không hướng về target).
+    Xếp hạng theo cfg["NEIGHBOR_RANKING"] (xem _score_candidate).
 
     `df` phải có index 0..N-1 (đã reset_index). Gọi RIÊNG cho từng split để tránh rò rỉ.
     """
     k = cfg["K_NEIGHBORS"]
-    use_orientation = cfg["USE_ORIENTATION_PENALTY"] and cfg.get("SKELETON_DIR")
     neighbor_lists = [[] for _ in range(len(df))]
 
     group_cols = [c for c in ("session", "camera_id") if c in df.columns]
@@ -58,15 +93,7 @@ def build_neighbor_index(df, cfg):
                     continue
 
                 dist = float(relation[2])
-                score = dist
-                if use_orientation:
-                    facing = estimate_facing_direction(
-                        cand_row["sample_id"], cfg["SKELETON_DIR"], cfg["SKELETON_CONF_THR"])
-                    t_stats, c_stats = stats_all[target_idx], stats_all[cand_idx]
-                    if facing is not None and t_stats and c_stats:
-                        to_target = np.array([t_stats[0] - c_stats[0], t_stats[1] - c_stats[1]])
-                        if orientation_angle_deg(facing, to_target) > cfg["ORIENTATION_ANGLE_THRESHOLD_DEG"]:
-                            score += cfg["ORIENTATION_PENALTY"]
+                score = _score_candidate(relation, target_row, cand_row, stats_all, target_idx, cand_idx, cfg)
 
                 candidates.append((score, int(cand_idx), dist, relation))
 

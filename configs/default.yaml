@@ -23,11 +23,25 @@ FEATURE_DIM: 2048
 K_NEIGHBORS: 4
 NEIGHBOR_CANDIDATE_MULTIPLIER: 6
 NEIGHBOR_REQUIRE_TIME_OVERLAP: true
-USE_ORIENTATION_PENALTY: true
+# Cách xếp hạng ứng viên (chỉ ảnh hưởng THỨ TỰ chọn hàng xóm, không đổi kiến trúc model):
+#   distance_only        : chỉ theo khoảng cách trung bình. Đơn giản nhất, không cần skeleton.
+#   distance_motion       : (khuyến nghị) khoảng cách + thưởng nếu đồng hiện diện lâu (temporal IoU)
+#                           + thưởng nếu khoảng cách đang giảm dần (2 người đang tới gần nhau).
+#                           Chỉ dùng dữ liệu bbox đã tính sẵn, KHÔNG cần đọc skeleton.
+#   distance_orientation  : (kiểu cũ) khoảng cách + phạt nếu trục vai (suy từ skeleton) lệch quá
+#                           ORIENTATION_ANGLE_THRESHOLD_DEG so với hướng tới target. Chỉ biết TRỤC
+#                           cơ thể, không phân biệt được mặt/lưng; cần đọc skeleton của mỗi ứng viên.
+NEIGHBOR_RANKING: distance_motion
+NEIGHBOR_TEMPORAL_IOU_WEIGHT: 0.5    # dùng khi NEIGHBOR_RANKING=distance_motion
+NEIGHBOR_CONVERGENCE_WEIGHT: 0.5     # dùng khi NEIGHBOR_RANKING=distance_motion
+USE_ORIENTATION_PENALTY: false       # chỉ có tác dụng khi NEIGHBOR_RANKING=distance_orientation
 ORIENTATION_ANGLE_THRESHOLD_DEG: 60.0
 ORIENTATION_PENALTY: 1.0
 USE_RELATION_FEATURES: false
 RELATION_DIM: 13
+# "node": cộng thẳng embedding quan hệ vào Fk (kiểu cũ).
+# "bias": encode quan hệ thành bias cộng vào attention score - Fk giữ nguyên nội dung ngoại hình.
+RELATION_ENCODING: node
 SOCIAL_DROPOUT: 0.30
 GNN_LAYERS: 2
 GNN_HEADS: 4
@@ -117,8 +131,3 @@ LOGIT_BIAS_STEP: 0.1
 RUN_SPEED_BENCHMARK: true
 BENCHMARK_BATCHES: 5
 SEED: 42
-
-
-USE_RELATION_FEATURES: false
-RELATION_DIM: 13
-RELATION_ENCODING: node
