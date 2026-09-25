@@ -20,6 +20,35 @@ class GraphAttentionLayer(nn.Module):
         x = self.norm2(x + self.dropout(self.ff(x)))
         return x, attn_w
 
+class RelationAttentionBias(nn.Module):
+    """Đặc trưng quan hệ Fb->Fk (khoảng cách, vận tốc tương đối, ...) -> 1 số thực bias
+    cho MỖI head attention. Bias này được cộng thẳng vào attention score (trước softmax),
+    tách biệt với nội dung ngoại hình của Fk - tức "nên chú ý bao nhiêu" (do hình học quyết
+    định) và "nội dung gì được truyền đi" (do embedding ngoại hình quyết định) không bị trộn
+    lẫn vào cùng 1 vector như cách cộng thẳng relation vào node."""
+ 
+    def __init__(self, relation_dim, num_heads, hidden_dim=32):
+        super().__init__()
+        self.num_heads = num_heads
+        self.net = nn.Sequential(nn.Linear(relation_dim, hidden_dim), nn.GELU(), nn.Linear(hidden_dim, num_heads))
+        nn.init.zeros_(self.net[-1].weight)     # khởi tạo bias = 0 => ban đầu không đổi so với attention thường
+        nn.init.zeros_(self.net[-1].bias)
+ 
+    def forward(self, relation, Fk_mask):
+        """relation: (B, K, relation_dim), Fk_mask: (B, K) -> attn_mask (B*num_heads, 1+K, 1+K)."""
+        B, K, _ = relation.shape
+        N = K + 1
+        relation = torch.nan_to_num(relation, nan=0.0, posinf=10.0, neginf=-10.0).clamp(-10, 10)
+ 
+        edge_bias = self.net(relation) * Fk_mask.float().unsqueeze(-1)   # (B, K, num_heads)
+        edge_bias = edge_bias.permute(0, 2, 1)                          # (B, num_heads, K)
+ 
+        full = edge_bias.new_zeros(B, self.num_heads, N, N)
+        full[:, :, 0, 1:] = edge_bias      # Fb (node 0) chú ý tới từng Fk
+        full[:, :, 1:, 0] = edge_bias      # dùng chung giá trị cho chiều Fk chú ý ngược lại Fb
+        return full.reshape(B * self.num_heads, N, N)
+
+
 
 class BuildGraphAttention(nn.Module):
     """Graph gồm Fb (node 0) + K node Fk. Sau GNN lấy lại node Fb làm F_social.

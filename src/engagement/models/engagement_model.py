@@ -49,7 +49,8 @@ class EngagementModelV5(nn.Module):
         self.use_relation_features = cfg["USE_RELATION_FEATURES"]
         self.social_graph = BuildGraphAttention(
             D, cfg["GNN_LAYERS"], cfg["GNN_HEADS"], cfg["SOCIAL_DROPOUT"],
-            relation_dim=cfg["RELATION_DIM"] if self.use_relation_features else None)
+            relation_dim=cfg["RELATION_DIM"] if self.use_relation_features else None,
+            relation_encoding=cfg.get("RELATION_ENCODING", "node"))
 
         # Context window (dùng chung body_encoder vì là cùng 1 người)
         self.use_context_window = cfg["USE_CONTEXT_WINDOW"]
