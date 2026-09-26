@@ -1,13 +1,21 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "engagement"
+name = "engagement-model"
 version = "5.0.0"
-description = "Engagement recognition: K-hop social graph + context window + skeleton Bi-LSTM + multimodal fusion"
-requires-python = ">=3.9"
-dependencies = ["torch>=2.0", "numpy", "pandas", "scipy", "scikit-learn", "matplotlib", "pyyaml"]
+description = "K-hop Graph + Backbone/Time-Attention + Bi-LSTM Skeleton + Multimodal Self-Attention Fusion engagement classifier."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.1",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scikit-learn>=1.2",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

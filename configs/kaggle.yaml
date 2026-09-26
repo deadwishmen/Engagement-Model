@@ -1,8 +1,0 @@
-# Đường dẫn khi chạy trên Kaggle (Add Input 4 dataset bên dưới vào notebook).
-_base_: default.yaml
-
-OUTPUT_DIR: /kaggle/input/datasets/deadwish1/engagement-dataset-npy
-FEATURE_DIR: /kaggle/input/datasets/drakhight/resnet-engagement/resnet_features
-SKELETON_DIR: /kaggle/input/datasets/drakhight/skeleton-engagement/skeleton_features_yolo/skeleton
-SPLIT_NAMES_JSON_PATH: /kaggle/input/datasets/deadwish1/slip-names/split_names.json
-CHECKPOINT_DIR: /kaggle/working/outputs

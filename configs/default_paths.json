@@ -1,0 +1,9 @@
+{
+  "OUTPUT_DIR": "/kaggle/input/datasets/deadwish1/engagement-dataset-npy",
+  "FEATURE_DIR": "/kaggle/input/datasets/drakhight/resnet-engagement/resnet_features",
+  "SKELETON_DIR": "/kaggle/input/datasets/drakhight/skeleton-engagement/skeleton_features_yolo/skeleton",
+  "SPLIT_NAMES_JSON_PATH": "/kaggle/input/datasets/deadwish1/slip-names/split_names.json",
+  "CHECKPOINT_DIR": "/kaggle/working/checkpoints_v5",
+
+  "_comment": "Copy this file, edit the paths above for your environment, and pass it to scripts/train.py with --config path/to/your_config.json. Any key from engagement_model.config.DEFAULT_CONFIG can be overridden here (e.g. EPOCHS, BATCH_SIZE, DRY_RUN)."
+}
